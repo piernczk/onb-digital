@@ -12,15 +12,45 @@ module debounce_edge_detect #(
     output logic edge_fall
 );
 
-    // TODO:
-    // 1. Implement a 2-stage synchronizer on the sig_in input.
-    // 2. Calculate the required cycle count: CYCLES = (CLK_FREQ_HZ * STABLE_TIME_MS) / 1000.
-    // 3. Implement a counter measuring the stability interval.
-    // 4. Update sig_debounced with the stable input state.
-    // 5. Generate 1-clock-cycle pulses for edge_rise and edge_fall.
+    // The counter counts up to CYCLES + 1.
+    // The moment it gets to CYCLES, the input signal is deemed stable and
+    // edge_rise is set.
+    // At CYCLES + 1 edge_rise is unset and the counter stops to prevent overflow.
+    parameter int unsigned CYCLES = (CLK_FREQ_HZ * STABLE_TIME_MS) / 1000;
+    parameter int unsigned CYCLES_BITS = $clog2(CYCLES + 1);
 
-    assign sig_debounced = 1'b0;
-    assign edge_rise      = 1'b0;
-    assign edge_fall      = 1'b0;
+    reg sig_d, sig_sync;
+    reg[CYCLES_BITS-1:0] counter;
+
+    // Synchronize the input
+    // i'm not entirely sure if a third register should be used, right between
+    // the synchronizer's output and counter's input
+    // directly comparing sig_d != sig_sync to determine whether the input has
+    // changed is probably risky since sig_d might be metastable, but what do i know
+    always_ff @(posedge clk) begin
+        sig_d <= sig_in;
+        sig_sync <= sig_d;
+    end
+
+    // i reckon checking these two for equality is better than checking twice
+    // for inequality, sth like counter < CYCLES
+    logic finished_now, finished_before;
+    assign finished_now = counter == CYCLES;
+    assign finished_before = counter == CYCLES + 1;
+
+    // reset is synchronous and handled as if the input changed
+    // for example it still emits edge_fall
+    // is it okay?
+    logic changed_now;
+    assign changed_now = !rst_n || sig_d != sig_sync;
+
+    always_ff @(posedge clk) begin
+        if (changed_now) counter <= '0;
+        else if (!finished_before) counter <= counter + 1'b1; 
+    end
+
+    assign edge_rise = finished_now;
+    assign edge_fall = finished_before & changed_now;
+    assign sig_debounced = (finished_now || finished_before) & sig_sync;
 
 endmodule
