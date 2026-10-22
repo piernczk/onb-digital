@@ -34,7 +34,12 @@ async def test_debouncer_glitch_and_stable(dut):
     dut.sig_in.value = 1
     # Wait for propagation
     rise_detected = False
-    for _ in range(600_000):
+    STABLE_TIME = 500_000
+    for _ in range(2 * (STABLE_TIME + 1)):
+        # Assuming that the debouncer uses an optimal number of bits for the
+        # counter, which is ceil(log2(STABLE_TIME + 1)), there will have been an
+        # overflow by the end of this for loop.
+
         await RisingEdge(dut.clk)
         if dut.edge_rise.value == 1:
             assert not rise_detected, "Error: edge_rise occurred more than once!"
@@ -44,3 +49,39 @@ async def test_debouncer_glitch_and_stable(dut):
 
     assert rise_detected, "Error: 1-cycle edge_rise pulse not detected!"
     assert dut.sig_debounced.value == 1, "Error: sig_debounced did not transition to high!"
+
+    # 4. Check for edge_fall
+    dut.sig_in.value = 0
+    fall_detected = False
+    for _ in range(5):
+        await RisingEdge(dut.clk)
+        if dut.edge_fall.value == 1:
+            assert not fall_detected, "Error: edge_fall occurred more than once!"
+            fall_detected = True
+        if dut.sig_debounced.value == 0 and fall_detected:
+            break
+
+    assert fall_detected, "Error: 1-cycle edge_fall pulse not detected!"
+    assert dut.sig_debounced.value == 0, "Error: sig_debounced did not transition to low!"
+
+@cocotb.test()
+async def test_debouncer_counter_overflow(dut):
+    """Test whether the counter overflows."""
+    clock = Clock(dut.clk, 20, unit="ns")  # 50 MHz
+    cocotb.start_soon(clock.start())
+    await reset_dut(dut)
+
+    STABLE_TIME = 500_000
+    ITERATIONS = 2 ** STABLE_TIME.bit_length() + STABLE_TIME + 2
+    
+    rise_detected = False
+    for _ in range(ITERATIONS):
+        # Assuming that the debouncer uses an optimal number of bits for the
+        # counter, which is at most ceil(log2(STABLE_TIME + 1)), the counter
+        # will overflow and get back to STABLE_TIME + 2 if there are no
+        # mitigations. In such case, edge_rise will occur more than once.
+
+        await RisingEdge(dut.clk)
+        if dut.edge_rise.value == 1:
+            assert not rise_detected, "Error: edge_rise occurred more than once!"
+            rise_detected = True
