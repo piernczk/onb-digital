@@ -34,19 +34,22 @@ module sync_fifo #(
 
     always_ff @(posedge clk) begin
         if (!rst_n) begin
-            rd_ptr <= 'b0;
-            wr_ptr <= 'b0;
-            rd_data <= 'b0;
+            rd_ptr    <= 'b0;
+            wr_ptr    <= 'b0;
+            rd_data   <= 'b0;
             occupancy <= 'b0;
         end else begin
+            // does the synthesizer optimize out the wrapping addition when
+            // DEPTH is a power of two?
+
             if (read) begin
                 rd_data <= mem[rd_ptr];
-                rd_ptr <= rd_ptr + 1'b1;
+                rd_ptr <= (rd_ptr == DEPTH - 1) ? 0 : rd_ptr + 1'b1;
             end
 
             if (write) begin
                 mem[wr_ptr] <= wr_data;
-                wr_ptr <= wr_ptr + 1'b1;
+                wr_ptr <= (wr_ptr == DEPTH - 1) ? 0 : wr_ptr + 1'b1;
             end
 
             occupancy <= occupancy + (write - read);
