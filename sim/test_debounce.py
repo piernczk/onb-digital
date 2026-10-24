@@ -34,12 +34,7 @@ async def test_debouncer_glitch_and_stable(dut):
     dut.sig_in.value = 1
     # Wait for propagation
     rise_detected = False
-    STABLE_TIME = 500_000
-    for _ in range(2 * (STABLE_TIME + 1)):
-        # Assuming that the debouncer uses an optimal number of bits for the
-        # counter, which is ceil(log2(STABLE_TIME + 1)), there will have been an
-        # overflow by the end of this for loop.
-
+    for _ in range(600_000):
         await RisingEdge(dut.clk)
         if dut.edge_rise.value == 1:
             assert not rise_detected, "Error: edge_rise occurred more than once!"
@@ -49,6 +44,10 @@ async def test_debouncer_glitch_and_stable(dut):
 
     assert rise_detected, "Error: 1-cycle edge_rise pulse not detected!"
     assert dut.sig_debounced.value == 1, "Error: sig_debounced did not transition to high!"
+
+    await RisingEdge(dut.clk)
+    rise_detected = dut.edge_rise.value == 1
+    assert not rise_detected, "Error: edge_rise should be a 1-cycle pulse!"
 
     # 4. Check for edge_fall
     dut.sig_in.value = 0
@@ -64,6 +63,10 @@ async def test_debouncer_glitch_and_stable(dut):
     assert fall_detected, "Error: 1-cycle edge_fall pulse not detected!"
     assert dut.sig_debounced.value == 0, "Error: sig_debounced did not transition to low!"
 
+    await RisingEdge(dut.clk)
+    fall_detected = dut.edge_fall.value == 1
+    assert not fall_detected, "Error: edge_fall should be a 1-cycle pulse!"
+
 @cocotb.test()
 async def test_debouncer_counter_overflow(dut):
     """Test whether the counter overflows."""
@@ -71,17 +74,27 @@ async def test_debouncer_counter_overflow(dut):
     cocotb.start_soon(clock.start())
     await reset_dut(dut)
 
-    STABLE_TIME = 500_000
-    ITERATIONS = 2 ** STABLE_TIME.bit_length() + STABLE_TIME + 2
-    
-    rise_detected = False
-    for _ in range(ITERATIONS):
-        # Assuming that the debouncer uses an optimal number of bits for the
-        # counter, which is at most ceil(log2(STABLE_TIME + 1)), the counter
-        # will overflow and get back to STABLE_TIME + 2 if there are no
-        # mitigations. In such case, edge_rise will occur more than once.
+    dut.sig_in.value = 1
 
+    STABLE_TIME = 500_000
+    MAX_CYCLES = 2 ** (STABLE_TIME + 1).bit_length()
+
+    rise_detected = False
+    for _ in range(STABLE_TIME + 100):
+        await RisingEdge(dut.clk)
+        if dut.edge_rise.value == 1:
+            rise_detected = True
+            break
+
+    assert rise_detected, "Error: 1-cycle edge_rise pulse not detected!"
+
+    # The counter is now equal to STABLE_TIME.
+    # Assuming that the debouncer uses an optimal number of bits for the
+    # counter, which is at most $clog2(STABLE_TIME + 2)), the counter
+    # will overflow and get back to STABLE_TIME after another MAX_CYCLES cycles
+    # if there are no mitigations. In such case, edge_rise will occur more than
+    # # once.
+    for _ in range(MAX_CYCLES):
         await RisingEdge(dut.clk)
         if dut.edge_rise.value == 1:
             assert not rise_detected, "Error: edge_rise occurred more than once!"
-            rise_detected = True
