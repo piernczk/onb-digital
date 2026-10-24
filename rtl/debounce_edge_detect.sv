@@ -12,15 +12,15 @@ module debounce_edge_detect #(
     output logic edge_fall
 );
 
-    // The counter counts up to CYCLES + 1.
-    // The moment it gets to CYCLES, the input signal is deemed stable and
-    // edge_rise is set.
-    // At CYCLES + 1 edge_rise is unset and the counter stops to prevent overflow.
+    // The counter counts up to CYCLES + 1. he moment it gets to CYCLES, the
+    // input signal is deemed stable and edge_rise is set. At CYCLES + 1
+    // edge_rise is unset and the counter is stopped to prevent overflow.
+    // The interval [0, CYCLES + 1] has CYCLES + 2 integers.
     parameter int unsigned CYCLES = (CLK_FREQ_HZ * STABLE_TIME_MS) / 1000;
-    parameter int unsigned CYCLES_BITS = $clog2(CYCLES + 1);
+    parameter int unsigned CYCLES_BITS = $clog2(CYCLES + 2);
 
-    reg sig_d, sig_sync;
-    reg[CYCLES_BITS-1:0] counter;
+    logic sig_d, sig_sync;
+    logic [CYCLES_BITS-1:0] counter;
 
     // Synchronize the input
     // i'm not entirely sure if a third register should be used, right between
@@ -38,9 +38,9 @@ module debounce_edge_detect #(
     assign finished_now = counter == CYCLES;
     assign finished_before = counter == CYCLES + 1;
 
-    // reset is synchronous and handled as if the input changed
-    // for example it still emits edge_fall
-    // is it okay?
+    // reset is active-low, synchronous and handled as if the input has changed,
+    // for example it emits edge_fall
+    // is this okay?
     logic changed_now;
     assign changed_now = !rst_n || sig_d != sig_sync;
 
